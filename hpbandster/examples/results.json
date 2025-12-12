@@ -1,0 +1,1 @@
+[[0, 0, 0], 3.0, {"submitted": 1644077662.6236093, "started": 1644077662.6242115, "finished": 1644077676.7138789}, {"loss": 0.8974609375, "info": {"test accuracy": 0.11349999904632568, "train accuracy": 0.1136474609375, "validation accuracy": 0.1025390625, "number of parameters": 13205}}, null]

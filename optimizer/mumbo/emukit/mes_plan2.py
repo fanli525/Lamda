@@ -1,0 +1,924 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Sat Nov 27 16:40:05 2021
+
+@author: fl347
+"""
+
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Oct 19 13:05:12 2021
+
+@author: fanny
+"""
+
+
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Aug 13 17:58:30 2021
+
+@author: fl347
+"""
+import numpy as np
+# from numpy.random import multivariate_normal #For later example
+
+# import pandas as pd
+import time
+import math
+
+import matplotlib.pyplot as plt
+# import GPyOpt
+from GPyOpt.methods import BayesianOptimization
+
+from  errors import root_mean_squared_error
+from scipy.spatial.distance import cdist
+
+from init_latin_hypercube_sampling  import  init_latin_hypercube_sampling
+
+
+import os
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
+
+np.random.seed(0)
+import GPy
+import numpy as np
+import mock
+import pytest
+
+from emukit.bayesian_optimization.loops import BayesianOptimizationLoop
+from emukit.bayesian_optimization.acquisitions import ExpectedImprovement,MaxValueEntropySearch,EntropySearch
+from emukit.core.interfaces import IModel
+from emukit.core.parameter_space import ParameterSpace
+from emukit.core.continuous_parameter import ContinuousParameter
+
+from emukit.core.loop import UserFunctionWrapper, FixedIterationsStoppingCondition
+
+from emukit.model_wrappers.gpy_model_wrappers import GPyModelWrapper
+from test_fun import  sp, rastrigin
+
+
+
+class Sgp_lcbpso: 
+    def __init__(self,dimension,problem_bounds,fo,fo_name,phi,N_train,maxN,AC_name):
+        self.dimension =dimension
+        self.problem_bounds =problem_bounds
+        self.fo =fo
+        
+        self.fo_name =fo_name
+
+        self.phi = phi
+        self.N_train=N_train
+        self.maxN = maxN
+        self.AC_name =AC_name
+    def __call__(self):
+        #初始化问题信息
+        dimension=self.dimension
+        problem_bounds=self.problem_bounds
+        fo=self.fo 
+        
+        fo_name=self.fo_name 
+        AC_name =self.AC_name
+        phi= self.phi
+        maxN= min(self.maxN*dimension,1000)
+        # N_train=10
+        N_train=11*dimension-1
+        d=dimension
+        # 初始化模型的参数
+        # Generate Normalized Dataset of (x,y) values
+        N_test=1000
+        N_train0=N_train
+        
+        if dimension==1:
+            xtest =np.linspace(problem_bounds[0], problem_bounds[1], N_test)
+            xtest = np.asarray([[xi] for xi in xtest])
+        else: 
+            xtest= np.random.uniform(problem_bounds[0], problem_bounds[1], size=(N_test, dimension))
+            
+        if fo_name==0:
+            ytest=fo(xtest,phi)[1]
+        else:
+            ytest=fo(xtest)
+
+        
+        it=0
+        # 初始化PSO的参数
+        n=40   
+        w=0.729;   
+        c1=1.491;  
+        c2=1.491;
+        wmax=0.729;
+        wmin=.2;
+        Tbd=np.ones(d)*problem_bounds[0]
+        Tbu=np.ones(d)*problem_bounds[1]
+        
+        Tbd_pop=np.repeat(Tbd[np.newaxis, :], n, axis=0)
+        Tbu_pop=np.repeat(Tbu[np.newaxis, :], n, axis=0)
+        tvmax=0.5*(Tbu_pop-Tbd_pop)
+        # Xt=self.Xt
+        Xt=init_latin_hypercube_sampling(Tbd, Tbu, N_train0)
+        if fo_name==0:
+            Yt=fo(Xt,phi)[1]
+        else:
+            Yt=fo(Xt)
+ 
+
+        
+        
+        Samp=Xt
+        YS=Yt
+
+
+        
+        pop=init_latin_hypercube_sampling(Tbd, Tbu, n)
+
+        
+        u=init_latin_hypercube_sampling(Tbd, Tbu, n)
+        u=0.25*u; v=u;    
+        lbest=pop
+        N_IC=np.array([1])# 采样点的数目
+        it=0
+        lbest=pop;
+        gbest=lbest[0,:]
+        Ymin=np.min(Yt[:,0])
+
+        
+        Ac=np.zeros(0)
+
+        space = ParameterSpace([ContinuousParameter('x'+str(i), Tbd[i], Tbu[i]) for i in range(d)])
+           
+        gpy_model = GPy.models.GPRegression(Samp, YS)
+        model = GPyModelWrapper(gpy_model)
+        if AC_name=='ES':
+            acquisition =EntropySearch(model,space) 
+        elif AC_name=='MES':
+            acquisition =MaxValueEntropySearch(model,space)
+        else:
+            pass
+        # #MaxValue 
+        
+        bo = BayesianOptimizationLoop(model=model, space=space, acquisition=acquisition)
+        bo.run_loop(UserFunctionWrapper(fo), FixedIterationsStoppingCondition(0))
+
+
+
+
+        
+        Tc = 1
+        NE=np.zeros(0)
+        T1=time.time()
+
+        while N_train<maxN and np.max(np.std(pop,0))>1.0e-4 and Tc==1:
+            
+            
+            w=wmax-(wmax-wmin)*(N_train-N_train0)/(maxN-N_train0)
+            v=w*v+c1*np.random.rand(n,d)*(lbest-pop)+c2*np.random.rand(n,d)*(gbest-pop)
+            
+            
+            v[v>tvmax]=tvmax[v>tvmax]
+            v[v<(0-tvmax)]=0-tvmax[v<(0-tvmax)]
+            tPOP=pop+v
+            
+            tPOP[tPOP>Tbu_pop]=Tbu_pop[tPOP>Tbu_pop]-(tPOP[tPOP>Tbu_pop]-Tbu_pop[tPOP>Tbu_pop])
+            tPOP[tPOP<Tbd_pop]=Tbd_pop[tPOP<Tbd_pop]+(Tbd_pop[tPOP<Tbd_pop]-tPOP[tPOP<Tbd_pop])
+            
+            pop=tPOP       
+            
+
+    
+            # AC1=self.AC(myBopt.model,[])
+            # mean, var= myBopt.model.predict(pop)
+
+            # sigma= np.diag(var)
+          
+            # sigma= np.sqrt(sigma)
+            y_LCB_s =acquisition.evaluate(pop)#y_LCB_s = mean - LCB_w * sigma
+            
+           # 由大到小排序
+            sorted_id = sorted(range(len(y_LCB_s)), key=lambda k: y_LCB_s[k], reverse=True)
+            
+            for ic in range(N_IC[0]):
+            
+                index =sorted_id[ic]
+                x_new=pop[index,:]
+                x_new=np.asarray([x_new])
+                xa= np.asarray([xi for xi in Xt])
+                dist =cdist(x_new,xa,metric='euclidean')
+                if np.min(dist)>1e-3:
+                    if fo_name==0:
+                        y_new=fo(x_new,phi)[1]
+                    else:
+                        y_new=fo(x_new)
+                    
+                    
+                    N_train=N_train+1
+                    Xt=np.vstack((Xt,x_new))
+                    Yt=np.append(Yt,y_new)
+
+                    Samp=np.vstack((Samp,x_new))
+                    YS=np.append(YS,y_new)
+                    YS=YS[:,np.newaxis]
+                    
+                    
+
+            gpy_model = GPy.models.GPRegression(Samp, YS)
+            model = GPyModelWrapper(gpy_model)
+            if AC_name=='ES':
+                acquisition =EntropySearch(model,space) 
+            elif AC_name=='MES':
+                acquisition =MaxValueEntropySearch(model,space) 
+            else:
+                pass
+            # #MaxValue 
+            
+            bo = BayesianOptimizationLoop(model=model, space=space, acquisition=acquisition)
+            bo.run_loop(UserFunctionWrapper(fo), FixedIterationsStoppingCondition(0))
+                 
+            
+            
+            
+            x0=np.vstack((pop,lbest))
+            mean, var= bo.model.predict(x0)
+        
+            if math.isnan(max(mean)) == False:
+            # 更新gbest和pbest
+                fpop=mean[0:n,0]
+                fbest=mean[n:,0]
+                if it==0:
+                    fbest=fpop
+                    lbest=pop
+
+                else:
+                    fbest[fpop<=fbest]=fpop[fpop<=fbest]
+                    lbest[fpop<=fbest,:]=pop[fpop<=fbest,:]
+
+                Ib = np.where(fbest == np.min(fbest))[0][0]
+
+                fgbest=fbest[0]
+                gbest=lbest[0,:]
+                if fbest[Ib]<=fgbest:
+                    gbest=lbest[Ib,:]
+                    fgbest=fbest[Ib]
+
+            #   测试算法的精度
+
+                mean, var= bo.model.predict(xtest)
+
+                #  accurate test
+                #Error1=error(ytest,mean, disp=1)
+                b=np.array(root_mean_squared_error(ytest,mean))
+                Ac=np.append(Ac,b)
+                Ymin=np.append(Ymin,np.min(Yt))
+                print("N_train:", N_train)
+
+                it=it+1
+                NE= np.append(NE, N_train)
+                n1 = NE.shape[0]
+                if n1>50:
+
+                    if np.std(NE[n1-50:,],0) ==0:
+
+                        Tc=0
+            
+        Ib=np.where(YS==np.min(Yt))[0][0]
+        x_opt=Samp[Ib,:]
+        y_opt=np.min(Yt)
+        T2=time.time()
+        return x_opt,y_opt,Samp,YS[:,0],Ac,Ymin,T2 - T1
+        
+        
+class Sgp_1_lcb: 
+    def __init__(self,dimension,problem_bounds,fo,fo_name,phi,N_train,maxN,AC_name):
+        self.dimension =dimension
+        self.problem_bounds =problem_bounds
+        self.fo =fo
+        self.fo_name =fo_name
+        self.phi = phi
+        self.N_train=N_train
+        self.maxN = maxN
+        self.AC_name=AC_name
+        
+        
+    def __call__(self):
+        #初始化问题信息
+        dimension=self.dimension
+        problem_bounds=self.problem_bounds
+        fo=self.fo 
+        
+        fo_name=self.fo_name 
+        AC_name=self.AC_name
+        phi= self.phi
+        maxN= min(self.maxN*dimension,1000)
+        N_train=11*dimension-1
+        # N_train=self.N_train
+        d=dimension
+        # 初始化模型的参数
+        # Generate Normalized Dataset of (x,y) values
+        N_test=1000
+        N_train0=N_train        
+        if dimension==1:
+            xtest =np.linspace(problem_bounds[0], problem_bounds[1], N_test)
+            xtest = np.asarray([[xi] for xi in xtest])
+        else: 
+            xtest= np.random.uniform(problem_bounds[0], problem_bounds[1], size=(N_test, dimension))
+
+
+        if fo_name==0:
+            ytest=fo(xtest,phi)[1]
+        else:
+            ytest=fo(xtest)
+        
+        
+        it=0
+        Tbd=np.ones(d)*problem_bounds[0]
+        Tbu=np.ones(d)*problem_bounds[1]
+        # Xt=self.Xt
+        Xt=init_latin_hypercube_sampling(Tbd, Tbu, N_train0)
+
+        # 利用同一工具箱的初始实验设计方法
+
+
+        if fo_name==0:
+            Yt=fo(Xt,phi)[1]
+        else:
+            Yt=fo(Xt)
+        Yt=Yt
+        Samp=Xt
+        YS=Yt        
+                
+        N_IC=np.array([1])
+
+        if self.fo_name==1:
+            x_ropt=np.ones(d)*0   
+        
+        Ac=np.zeros(0)
+        NE=np.zeros(0)
+        
+        D_best_op=np.zeros(0)#  当前最优值到真值最优值的欧式距离
+        D_new_op=np.zeros(0)#  当前采样点到真值最优值的欧式距离
+ 
+        Ac_ini=np.zeros(0)                   
+        Ymin=np.min(YS[:,0])
+                        
+        T1=time.time()
+
+
+
+        space = ParameterSpace([ContinuousParameter('x'+str(i), Tbd[i], Tbu[i]) for i in range(d)])
+
+
+
+   
+
+
+        # RBF
+        kernel = GPy.kern.Matern52(input_dim=d)
+
+        gpy_model = GPy.models.GPRegression(Xt, Yt,kernel,normalizer=True)
+        # gpy_model['.*Mat52.var'].constrain_bounded(lower=1.0e-4, upper=1.0e4)#.constrain_positive() m['.*StdPeriodic.var'].constrain_fixed(1.) #For this kernel, B.kappa encodes the variance now.optimizer='trust_region'
+        gpy_model['.*noise*'].constrain_fixed(1.0e-8)
+
+        model = GPyModelWrapper(gpy_model)
+        if AC_name=='ES':
+            acquisition =EntropySearch(model,space) 
+        elif AC_name=='MES':
+            acquisition =MaxValueEntropySearch(model,space) 
+        else:
+            pass
+        # #MaxValue 
+        
+        bo = BayesianOptimizationLoop(model=model, space=space, acquisition=acquisition)
+        bo.run_loop(UserFunctionWrapper(fo), FixedIterationsStoppingCondition(maxN-N_train0))
+        results = bo.get_results()
+        
+        Samp=model.X
+        YS=model.Y        
+        
+        for i  in [maxN-N_train0]:
+
+
+
+
+            kernel = GPy.kern.Matern52(input_dim=d)
+            Samp1=Samp[:N_train0+i,:]
+            YS1=YS[:N_train0+i,:]
+            gpy_model = GPy.models.GPRegression(Samp1, YS1,kernel,normalizer=True)
+            # gpy_model['.*Mat52.var'].constrain_bounded(lower=1.0e-4, upper=1.0e4) #constrain_positive()m['.*StdPeriodic.var'].constrain_fixed(1.) #For this kernel, B.kappa encodes the variance now.optimizer='trust_region'
+            gpy_model['.*noise*'].constrain_fixed(1.0e-8)
+    
+            model = GPyModelWrapper(gpy_model,n_restarts = 5)
+            model.optimize()
+
+            
+            Tbd_in=x_ropt-(Tbu-Tbd)/4
+            Tbu_in=x_ropt+(Tbu-Tbd)/4
+            
+            
+            Xt_ini=init_latin_hypercube_sampling(Tbd_in, Tbu_in, 80)
+            Yt_ini=fo(Xt_ini) 
+
+
+            x_new=Samp[:N_train0+i,:][-1,:]
+            y_new=YS[:N_train0+i,:][-1,:]
+                
+            # N_train=N_train0+i   
+
+            # Samp=np.vstack((Samp,x_new))
+            # YS=np.append(YS,y_new)
+            # YS=YS[:,np.newaxis]
+            
+            gbest=x_new
+            
+            d1=np.sqrt(np.sum((gbest-x_ropt)**2))
+            D_best_op=np.append(D_best_op, d1)#  当前最优值到真值最优值的欧式距离
+
+            d1=np.sqrt(np.sum((x_new-x_ropt)**2))
+            D_new_op=np.append(D_new_op, d1)#  当前最优值到真值最优值的欧式距离
+
+            m_ini, var_ini=  model.model.predict(Xt_ini)
+                   
+
+            sorted_pin = sorted(range(len(m_ini)), key=lambda k: m_ini[k], reverse=False)
+            sorted_rin = sorted(range(len(Yt_ini)), key=lambda k: Yt_ini[k], reverse=False)
+            
+    
+            a=(np.array(sorted_pin)==np.array(sorted_rin))
+            px=np.sum(a==1)/len(a)
+            Ac_ini=np.append(Ac_ini, px)#  当前最优值到真值最优值的欧式距离        
+       
+                
+            #测试最终模型的预测误差                    
+            mean, var= model.model.predict(xtest)
+    
+            b=np.array(root_mean_squared_error(ytest,mean))
+            Ac=np.append(Ac,b)
+            Ymin=np.append(Ymin,np.min(Yt))           
+            print("N_train:",Samp.shape[0])
+    
+            if dimension==1:
+                plt.figure()
+                plt.plot(xtest,ytest, 'k--',label='real fun' )
+                plt.plot(xtest,mean, 'r--',label='pre fun' )
+    
+        
+                plt.plot(Samp1,YS1, 'ko',label='Train points' )
+                plt.plot(Samp1[-1],YS1[-1], 'rs',label='Train points' )
+        
+                plt.show()
+    
+    
+            if dimension==2:
+                theta0 = np.linspace(problem_bounds[0], problem_bounds[1], 100)
+                theta1 = np.linspace(problem_bounds[0], problem_bounds[1], 100)
+                Theta0, Theta1 = np.meshgrid(theta0, theta1)
+             
+            
+                LML=np.zeros((Theta0.shape[0],Theta0.shape[1]))
+                for i in range(Theta0.shape[0]):
+                    for j in range(Theta0.shape[1]):  
+                        LML[i,j]=bo.model.predict(np.array([Theta0[i, j], Theta1[i, j]]).reshape(-1,2))[0]
+    
+            
+            
+            
+            
+            
+            
+                if it%1 ==0:
+                    plt.figure()
+                    CS=plt.contour(Theta1,Theta0 , LML)#,8,alpha=0.75,cmap=plt.cm.hot
+                    
+                    
+                    plt.clabel(CS,inline=1,fontsize=10)
+                    # ax.scatter(x[:,0],x[:,1], y, marker='o',s=6.0,color=(1,0,0.),label='Train points')  
+                    plt.scatter(Samp1[:,0],Samp1[:,1], marker='o',s=30.0,color=(0,0,0.),label='Train points')  
+                    plt.scatter(Samp1[-1,0],Samp1[-1,1], marker='s',s=50.0,color=(1,0,0.),label='Train points') 
+                    
+                    plt.scatter(0,0, marker='*',s=190.0,color=(1,0,0.),label='Train points') 
+                    plt.title('Nt = '+str(N_train))
+            
+                    
+                    cb=plt.colorbar()
+                    plt.show()
+         
+        plt.figure()
+        plt.subplot(211)
+        plt.plot(D_best_op, 'k--',label='D_best_op' )
+        plt.legend()      
+        
+        plt.subplot(212)
+        plt.plot(D_new_op, 'k--',label='D_new_op' )
+        plt.legend()      
+        
+
+        
+            
+        plt.legend()      
+        plt.tight_layout()
+        
+        plt.figure()
+
+        
+        plt.plot(Ac_ini, 'k--',label='Ac_ini' )
+        
+        plt.legend()    
+        
+        
+        plt.show()
+    
+    
+    
+
+        EV_inf=[]
+        EV_inf.append({'D_best_op': D_best_op,'D_new_op': D_new_op,'Ac_ini': Ac_ini})
+        x_opt=results.minimum_location
+        y_opt=results.minimum_value
+        T2=time.time()
+        return x_opt,y_opt,Samp,YS[:,0],Ac,Ymin,T2 - T1,EV_inf
+                        
+
+                  
+class Sgp_model_pso: 
+    def __init__(self,dimension,problem_bounds,fo,fo_name,phi,N_train,maxN,Model_ac_name,pso_ac_name):
+        self.dimension =dimension
+        self.problem_bounds =problem_bounds
+        self.fo =fo
+        
+        self.fo_name =fo_name
+
+        self.phi = phi
+        self.N_train=N_train
+        self.maxN = maxN
+        self.Model_ac_name=Model_ac_name
+        self.pso_ac_name = pso_ac_name       
+        
+        
+    def __call__(self):
+        #初始化问题信息
+        dimension=self.dimension
+        problem_bounds=self.problem_bounds
+        fo=self.fo 
+        
+        fo_name=self.fo_name 
+
+        phi= self.phi
+        
+        Model_ac_name=self.Model_ac_name
+        pso_ac_name = self.pso_ac_name          
+        
+        maxN= min(self.maxN*dimension,1000)
+        N_train=11*dimension-1
+        d=dimension
+        # 初始化模型的参数
+        # Generate Normalized Dataset of (x,y) values
+        N_test=1000
+        N_train0=N_train
+        
+        if dimension==1:
+            xtest =np.linspace(problem_bounds[0], problem_bounds[1], N_test)
+            xtest = np.asarray([[xi] for xi in xtest])
+        else: 
+            xtest= np.random.uniform(problem_bounds[0], problem_bounds[1], size=(N_test, dimension))
+            
+        if fo_name==0:
+            ytest=fo(xtest,phi)[1]
+        else:
+            ytest=fo(xtest)
+
+        
+        it=0
+        # 初始化PSO的参数
+        n=40   
+        w=0.729;   
+        c1=1.491;  
+        c2=1.491;
+        wmax=0.729;
+        wmin=.2;
+        Tbd=np.ones(d)*problem_bounds[0]
+        Tbu=np.ones(d)*problem_bounds[1]
+        
+        Tbd_pop=np.repeat(Tbd[np.newaxis, :], n, axis=0)
+        Tbu_pop=np.repeat(Tbu[np.newaxis, :], n, axis=0)
+        tvmax=0.5*(Tbu_pop-Tbd_pop)
+        # Xt=self.Xt
+        Xt=init_latin_hypercube_sampling(Tbd, Tbu, N_train0)
+
+        if fo_name==0:
+            Yt=fo(Xt,phi)[1]
+        else:
+            Yt=fo(Xt)
+        Yt=Yt[:,np.newaxis]
+        
+        
+        Samp=Xt
+        YS=Yt
+        
+        
+        pop=init_latin_hypercube_sampling(Tbd, Tbu, n)
+        
+        u=init_latin_hypercube_sampling(Tbd, Tbu, n)
+        u=0.25*u; v=u;    
+        lbest=pop
+        N_IC=np.array([1])
+        it=0
+        lbest=pop;
+        gbest=lbest[0,:]
+        Ymin=np.min(Yt[:,0])
+        LCB_w=1
+        
+        Ac=np.zeros(0)
+        Model_ac=self.Model_ac
+        pso_ac =  self.pso_ac 
+        
+        T1=time.time()
+
+
+        space = ParameterSpace([ContinuousParameter('x'+str(i), Tbd[i], Tbu[i]) for i in range(d)])
+           
+        gpy_model = GPy.models.GPRegression(Samp, YS)
+        model = GPyModelWrapper(gpy_model)
+        if model_AC_name=='ES':
+            acquisition =EntropySearch(model,space) 
+        elif model_AC_name=='ES':
+            acquisition =MaxValueEntropySearch(model,space) 
+        # #MaxValue 
+        
+        bo = BayesianOptimizationLoop(model=model, space=space, acquisition=acquisition)
+
+
+        Tc = 1
+        NE=np.zeros(0)
+        while N_train<maxN and np.max(np.std(pop,0))>1.0e-4 and Tc==1:
+
+
+            bo.run_loop(UserFunctionWrapper(fo), FixedIterationsStoppingCondition(1))
+
+            Samp=bo.model.X
+            YS=bo.model.Y   
+            
+            w=wmax-(wmax-wmin)*(N_train-N_train0)/(maxN-N_train0)
+            v=w*v+c1*np.random.rand(n,d)*(lbest-pop)+c2*np.random.rand(n,d)*(gbest-pop)
+            
+            
+            v[v>tvmax]=tvmax[v>tvmax]
+            v[v<(0-tvmax)]=0-tvmax[v<(0-tvmax)]
+            tPOP=pop+v
+            
+            tPOP[tPOP>Tbu_pop]=Tbu_pop[tPOP>Tbu_pop]-(tPOP[tPOP>Tbu_pop]-Tbu_pop[tPOP>Tbu_pop]);
+            tPOP[tPOP<Tbd_pop]=Tbd_pop[tPOP<Tbd_pop]+(Tbd_pop[tPOP<Tbd_pop]-tPOP[tPOP<Tbd_pop]);
+            
+            pop=tPOP; 
+
+
+
+            if pso_AC_name=='ES':
+                pso_acquisition =EntropySearch(model,space) 
+            elif pso_AC_name=='ES':
+                pso_acquisition =MaxValueEntropySearch(model,space) 
+
+            y_LCB_s =pso_acquisition.evaluate(pop)#y_LCB_s = mean - LCB_w * sigma
+
+
+
+
+          
+            sorted_id = sorted(range(len(y_LCB_s)), key=lambda k: y_LCB_s[k], reverse=False)
+            
+            for ic in range(N_IC[0]):
+            
+                index =sorted_id[ic]
+                x_new=pop[index,:]
+                x_new=np.asarray([x_new])
+                xa= np.asarray([xi for xi in Xt])
+                dist =cdist(x_new,xa,metric='euclidean')
+                if np.min(dist)>1e-3:
+                    if fo_name==0:
+                        y_new=fo(x_new,phi)[1]
+                    else:
+                        y_new=fo(x_new)
+                    
+                    
+                    N_train=N_train+1
+                    Xt=np.vstack((Xt,x_new))
+                    Yt=np.append(Yt,y_new)
+
+                    Samp=np.vstack((Samp,x_new))
+                    YS=np.append(YS,y_new)
+                    YS=YS[:,np.newaxis]
+
+
+
+
+
+   
+            gpy_model = GPy.models.GPRegression(Samp, YS)
+            model = GPyModelWrapper(gpy_model)
+            if model_AC_name=='ES':
+                acquisition =EntropySearch(model,space) 
+            elif model_AC_name=='ES':
+                acquisition =MaxValueEntropySearch(model,space) 
+            # #MaxValue 
+            
+            bo = BayesianOptimizationLoop(model=model, space=space, acquisition=acquisition)
+            bo.run_loop(UserFunctionWrapper(fo), FixedIterationsStoppingCondition(0))
+                
+                
+
+            x0=np.vstack((pop,lbest))
+            mean, var= bo.model.predict(x0)
+
+            if math.isnan(max(mean)) == False:
+
+
+            # 更新gbest和pbest
+                fpop=mean[0:n,0]
+                fbest=mean[n:,0]
+
+
+                if it==0:
+                    fbest=fpop
+                    lbest=pop
+
+                else:
+                    fbest[fpop<=fbest]=fpop[fpop<=fbest]
+                    lbest[fpop<=fbest,:]=pop[fpop<=fbest,:]
+
+                Ib=np.where(fbest==np.min(fbest))[0][0]
+                fgbest=fbest[0]
+                gbest=lbest[0,:]
+                if fbest[Ib]<=fgbest:
+                    gbest=lbest[Ib,:]
+                    fgbest=fbest[Ib]
+
+            #   测试算法的精度
+                mean, var= bo.model.predict(xtest)
+
+                #  accurate test
+                # Error1=error(ytest,mean, disp=1)
+                b=np.array(root_mean_squared_error(ytest,mean))
+                Ac=np.append(Ac,b)
+                Ymin=np.append(Ymin,np.min(Yt))
+                print("N_train:", N_train)
+
+                it=it+1
+                NE= np.append(NE, N_train)
+                n1 = NE.shape[0]
+                if n1>50:
+
+                    if np.std(NE[n1-50:,],0) ==0:
+
+                        Tc=0
+
+            
+        Ib=np.where(YS==np.min(Yt))[0][0]
+        x_opt=Samp[Ib,:]
+        y_opt=np.min(Yt)
+        T2=time.time()
+        return x_opt,y_opt,Samp,YS[:,0],Ac,Ymin,T2 - T1
+ 
+
+
+
+
+             
+class Sgp_model_lcb_min: 
+    def __init__(self,Xt,dimension,problem_bounds,fo,fo_name,phi,N_train,maxN):
+        self.Xt =Xt
+        self.dimension =dimension
+        self.problem_bounds =problem_bounds
+        self.fo =fo
+        
+        self.fo_name =fo_name
+
+        self.phi = phi
+        self.N_train=N_train
+        self.maxN = maxN
+    def __call__(self):
+        #初始化问题信息
+        dimension=self.dimension
+        problem_bounds=self.problem_bounds
+        fo=self.fo 
+        
+        fo_name=self.fo_name 
+
+        phi= self.phi
+        maxN= self.maxN*dimension
+        N_train=self.N_train*dimension
+        d=dimension
+        # 初始化模型的参数
+        # Generate Normalized Dataset of (x,y) values
+        N_test=1000
+        N_train0=N_train        
+        if dimension==1:
+            xtest =np.linspace(problem_bounds[0], problem_bounds[1], N_test)
+            xtest = np.asarray([[xi] for xi in xtest])
+        else: 
+            xtest= np.random.uniform(problem_bounds[0], problem_bounds[1], size=(N_test, dimension))
+
+
+        if fo_name==0:
+            ytest=fo(xtest,phi)[1]
+        else:
+            ytest=fo(xtest)
+        
+        
+        it=0
+        
+        # 初始化PSO的参数
+        n=40
+        Tbd=np.ones(d)*problem_bounds[0]
+        Tbu=np.ones(d)*problem_bounds[1]
+        
+        Tbd_pop=np.repeat(Tbd[np.newaxis, :], n, axis=0)
+        Tbu_pop=np.repeat(Tbu[np.newaxis, :], n, axis=0)
+        Xt=self.Xt
+
+        if fo_name==0:
+            Yt=fo(Xt,phi)[1]
+        else:
+            Yt=fo(Xt)  
+        Samp=Xt
+        YS=Yt        
+        
+        
+        pop=Xt
+        
+        N_IC=np.array([1])
+
+        Ymin=np.min(Yt)
+
+        
+        Ac=np.zeros(0)
+        kernel = MaternKernel(nu=2.5)
+        Method='sp_chol'
+        itmax=5*maxN
+        
+        T1=time.time()
+        while N_train<maxN and it<itmax:
+            
+            gp = GPR(Xt, Yt,kernel,log_marginal_likelihood )
+            gp =gp.fit(gp,Method)
+            if it%2 !=0:
+                fun= LCB_B(gp)
+            else:
+                fun=Mean(gp)
+            # fun=MF_POI(gp,cost,N_train)
+            # fun=MF_EI(gp,cost,N_train)
+        
+            
+            xa= np.asarray([xi for xi in Xt])
+            dx=cdist(xtest, xa,metric='euclidean')
+            c=np.min(dx,1)
+            index =np.where(c==np.max(c))[0][0]
+        
+            x0=xtest[index,:]
+            l=problem_bounds[0]*np.ones(dimension)
+            u=problem_bounds[1]*np.ones(dimension)
+        
+            hy_bd=list(zip(list(l),list(u)))             
+            options={'maxiter': 1000}
+            #x0= np.asarray([x0])
+            optparams =minimize(fun, x0, args=(), method='L-BFGS-B', bounds=hy_bd,options=options)
+            
+            x_new=optparams.x
+            
+            x_new=np.asarray([x_new])
+            xa= np.asarray([xi for xi in Xt])
+            dist =cdist(x_new,xa,metric='euclidean')
+            if np.min(dist)>1e-3:
+                if fo_name==0:
+                    y_new=fo(x_new,phi)[1]
+                else:
+                    y_new=fo(x_new)
+                
+                
+                N_train=N_train+1
+                Xt=np.vstack((Xt,x_new))
+                Yt=np.append(Yt,y_new)
+
+                Samp=np.vstack((Samp,x_new))
+                YS=np.append(YS,y_new)        
+        
+        
+            gp = GPR(Xt, Yt,kernel,log_marginal_likelihood )
+            gp =gp.fit(gp,Method)
+            
+        
+        #   测试算法的精度
+            
+            mean, var = gp.predict(xtest)
+
+            #  accurate test 
+            # Error1=error(ytest,mean, disp=1)
+            b=np.array(root_mean_squared_error(ytest,mean))
+            Ac=np.append(Ac,b)
+            Ymin=np.append(Ymin,np.min(Yt))
+            print("N_train:", N_train)
+
+            
+               
+            it=it+1
+        Ib=np.where(YS==np.min(Yt))[0][0]
+        x_opt=Samp[Ib,:]
+        y_opt=np.min(Yt)
+        T2=time.time()
+        return x_opt,y_opt,Samp,YS,Ac,Ymin,T2 - T1
