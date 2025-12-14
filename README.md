@@ -1,41 +1,45 @@
-# Lamda
-
-
 # LAMDA
 
-This repository contains pseudocode and implementation for the submitted paper:
+This repository contains pseudocode and implementation for the paper:
 
-**LAMDA: Two-Phase Multi-Fidelity HPO via Learning Promising Regions from Data**
+**LAMDA: Two-Phase Multi-Fidelity HPO via Learning Promising Regions from Data**  
+F. Li, S. Wang, K. Li  
+*Proceedings of the AAAI Conference on Artificial Intelligence (AAAI 2026)*
 
-The code has been anonymized to comply with the review process.
+## Overview
+
+LAMDA is a two-phase multi-fidelity hyperparameter optimization (HPO) framework that learns promising regions from historical evaluation data and focuses expensive high-fidelity evaluations on these regions.  
+The proposed method is compatible with both Bayesian optimization and surrogate-assisted optimization frameworks.
 
 ## Implemented Methods
 
-We currently provide implementations of the following hyperparameter optimization (HPO) methods:
+We provide implementations of the following HPO methods:
 
 - **LAMDA + BOHB** and **BOHB**
 - **LAMDA + MUMBO** and **MUMBO**
 - **LAMDA + BO** and **BO**
 - **LAMDA + RS** and **RS**
 
-These methods are implemented in a unified framework to enable fair and reproducible comparisons between single-fidelity, multi-fidelity, and LAMDA-enhanced optimization strategies.
+All methods are implemented in a unified framework to ensure fair and reproducible comparisons.
 
 ## Dependencies
 
-The following open-source packages are used in this repository:
+The following open-source libraries are used:
 
 - **HpBandSter** for BOHB and Random Search (RS):  
   https://github.com/automl/HpBandSter
 
 - **Emukit** for MUMBO (multi-fidelity Bayesian optimization):  
-  https://github.com/EmuKit/emukit/blob/main/notebooks/Emukit-tutorial-multi-fidelity-MUMBO-Example.ipynb
+  https://github.com/EmuKit/emukit
 
 - **GPyOpt** for Bayesian Optimization (BO):  
   https://github.com/SheffieldML/GPyOpt
 
 ## Citation
 
-If you use this code in your research, please cite the following paper:
+If you use this code, please cite:
+
+
 
 
 
