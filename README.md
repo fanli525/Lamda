@@ -1,4 +1,4 @@
-# LAMDA
+# Lamda
 
 This repository contains pseudocode and implementation for the paper:
 
