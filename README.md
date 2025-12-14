@@ -39,8 +39,17 @@ The following open-source libraries are used:
 
 If you use this code, please cite:
 
+@inproceedings{li2026lamda,
+title = {LAMDA: Two-Phase Multi-Fidelity HPO via Learning Promising Regions from Data},
+author = {Li, F. and Wang, S. and Li, K.},
+booktitle = {Proceedings of the AAAI Conference on Artificial Intelligence},
+year = {2026}
+}
 
 
+## License
+
+This project is released for research purposes. Please refer to the LICENSE file for details.
 
 
 
